@@ -5,8 +5,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <exception>
-#include <functional>
 #include <iostream>
 #include <iterator>
 #include <mutex>
@@ -22,6 +20,9 @@
 #include <vector>
 #include <fcntl.h>
 
+#ifdef DEBUG
+#include "../debug/log.hpp"
+#endif
 #include "connection.hpp"
 
 connection::connection(int port, int max_connections) 
@@ -34,8 +35,6 @@ connection::connection(int port, int max_connections)
     if (sockfd < 0) {
         throw connection_exception(0);
     }
-    /* fcntl(sockfd, F_SETOWN, getpid()); */
-    /* fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL) | O_ASYNC); */
     sockaddr_in addr;
     explicit_bzero(&addr, sizeof(addr));
     addr.sin_family = AF_INET;
@@ -49,14 +48,18 @@ connection::connection(int port, int max_connections)
 
 void connection::handle_connections() {
     while (true) {
-        std::cerr << "Waiting for sum...\n";
+#ifdef DEBUG
+        debug::debug_log("Connection thread") << "Waiting for sum...\n";
+#endif
         {
             std::unique_lock<std::mutex> lock(queue_mutex);
             queue_condition.wait(lock, [this]{ return !to_send.empty(); });
         }
         int sum = to_send.front();
         to_send.pop();
-        std::cerr << "Got sum " << sum << "\n";
+#ifdef DEBUG
+        debug::debug_log("Connection thread") << "Got sum " << sum << "\n";
+#endif
         std::string str = std::to_string(sum);
 
         accept_new_connections();
@@ -75,11 +78,9 @@ void connection::handle_connections() {
             }
             for (pollfd& pfd : polling) {
                 if (pfd.revents == 0) {
-                    std::cerr << "no events on " << pfd.fd << std::endl;
                     continue;
                 }
                 if (pfd.revents != POLLOUT) {
-                    std::cerr << "Unexpected event on " << pfd.fd << ": closing connection" << std::endl;
                     fds.erase(pfd.fd);
                     close(pfd.fd);
                 }
@@ -93,7 +94,9 @@ void connection::handle_connections() {
             polling.erase(std::remove_if(polling.begin(), polling.end(), [](pollfd pfd){ return pfd.fd == -1; }), polling.end());
         }
         if (!sent) {
-            std::cerr << "Failed to send, repushing " << sum << std::endl;
+#ifdef DEBUG
+            debug::debug_log("Connection thread") << "Failed to send, repushing " << sum << std::endl;
+#endif
             to_send.push(sum);
         }
     }
@@ -105,14 +108,18 @@ void connection::accept_new_connections() {
     if (fds.empty()) {
         int flags = fcntl(sockfd, F_GETFL);
         fcntl(sockfd, F_SETFL, flags & (~O_NONBLOCK));
-        std::cerr << "Waiting for new connections...\n";
+#ifdef DEBUG
+        debug::debug_log("Connection thread") << "Waiting for new connections...\n";
+#endif
         new_fd = accept(sockfd, NULL, NULL);
         if (new_fd < 0) {
             perror("Error on accept()");
             exit(1);
         }
         else {
-            std::cerr << "New connection established " << new_fd << std::endl;
+#ifdef DEBUG
+            debug::debug_log("Connection thread") << "New connection established " << new_fd << std::endl;
+#endif
             fds.insert(new_fd);
         }
         fcntl(sockfd, F_SETFL, flags);
@@ -127,7 +134,9 @@ void connection::accept_new_connections() {
         if (errno == EWOULDBLOCK) {
             break;
         }
-        std::cerr << "New connection established " << new_fd << std::endl;
+#ifdef DEBUG
+        debug::debug_log("Connection thread") << "New connection established " << new_fd << std::endl;
+#endif
         fds.insert(new_fd);
     } while (new_fd != -1);
 }

@@ -1,8 +1,6 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
-#include <cstring>
-#include <exception>
 #include <functional>
 #include <iostream>
 #include <mutex>
@@ -13,6 +11,9 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
+#ifdef DEBUG
+#include "../debug/log.hpp"
+#endif
 #include "connection.hpp"
 
 
@@ -37,9 +38,7 @@ int main() {
 
 void thread1(std::mutex& new_data_lock, std::mutex& data_read_lock, std::string& buffer) {
     std::string input;
-    while (true) {
-        // TODO: deal with this thread, it blocks when there's no connections
-        std::cerr << "Waiting for input...\n";
+    while (!std::cin.eof()) {
         std::cout << "$ ";
         std::cin >> input;
         if (input.length() > 64 || std::any_of(input.cbegin(), input.cend(), std::not_fn(isdigit))) {
@@ -48,12 +47,13 @@ void thread1(std::mutex& new_data_lock, std::mutex& data_read_lock, std::string&
         }
         std::sort(input.begin(), input.end(), std::greater());
         input = replace_even(input);
-        std::cerr << "Waiting for data being read...\n";
+#ifdef DEBUG
+        debug::debug_log("Reading thread") << "Waiting for data being read...\n";
+#endif
         data_read_lock.lock();
         buffer = input;
         new_data_lock.unlock();
     }
-
 }
 
 void thread2(std::mutex& new_data_lock, std::mutex& data_read_lock, std::string& buffer) {
@@ -61,8 +61,10 @@ void thread2(std::mutex& new_data_lock, std::mutex& data_read_lock, std::string&
     try {
         connection con(6666);
         std::thread conn_thread([&]() { con.handle_connections(); });
-        while (true) {
-            std::cerr << "Waiting for data...\n";
+        while (!std::cin.eof()) {
+#ifdef DEBUG
+            debug::debug_log("Writing thread") << "Waiting for data...\n";
+#endif
             new_data_lock.lock();
             input = buffer;
             buffer.clear();
@@ -76,7 +78,6 @@ void thread2(std::mutex& new_data_lock, std::mutex& data_read_lock, std::string&
                 }
                 return lhs;
             });
-            std::cerr << sum << std::endl;
             con.send_sum(sum);
         }
         conn_thread.join();
