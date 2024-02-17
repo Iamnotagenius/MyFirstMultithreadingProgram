@@ -6,6 +6,7 @@
 #include <numeric>
 #include <ostream>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -16,8 +17,8 @@
 #include "sum_sender.hpp"
 
 
-void thread1(std::mutex& new_data_lock, std::mutex& data_read_lock, std::string& buffer);
-void thread2(std::mutex& new_data_lock, std::mutex& data_read_lock, std::string& buffer, sum_sender& con);
+void reader(std::mutex& new_data_lock, std::mutex& data_read_lock, std::string& buffer);
+void writer(std::mutex& new_data_lock, std::mutex& data_read_lock, std::string& buffer, sum_sender& con);
 std::string replace_even(const std::string& digits);
 
 int main() {
@@ -31,19 +32,19 @@ int main() {
         buffer.reserve(128);
         new_data.lock();
 
-        std::thread t1(thread1, std::ref(new_data), std::ref(data_handled), std::ref(buffer));
-        std::thread t2(thread2, std::ref(new_data), std::ref(data_handled), std::ref(buffer), std::ref(con));
+        std::thread t1(reader, std::ref(new_data), std::ref(data_handled), std::ref(buffer));
+        std::thread t2(writer, std::ref(new_data), std::ref(data_handled), std::ref(buffer), std::ref(con));
         std::thread conn_thread([&]() { con.handle_connections(); });
 
         t1.join();
         t2.join();
         conn_thread.detach();
-    } catch (const connection_exception& e) {
+    } catch (const std::system_error& e) {
         std::cerr << "Caught exception: " << e.what() << std::endl;
     }
 }
 
-void thread1(std::mutex& new_data_lock, std::mutex& data_read_lock, std::string& buffer) {
+void reader(std::mutex& new_data_lock, std::mutex& data_read_lock, std::string& buffer) {
     std::string input;
     while (!std::cin.eof()) {
         std::cout << "$ ";
@@ -70,7 +71,7 @@ void thread1(std::mutex& new_data_lock, std::mutex& data_read_lock, std::string&
 #endif
 }
 
-void thread2(std::mutex& new_data_lock, std::mutex& data_read_lock, std::string& buffer, sum_sender& con) {
+void writer(std::mutex& new_data_lock, std::mutex& data_read_lock, std::string& buffer, sum_sender& con) {
     std::string input;
     while (!std::cin.eof()) {
 #ifdef DEBUG

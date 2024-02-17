@@ -12,6 +12,7 @@
 #include <queue>
 #include <set>
 #include <string>
+#include <system_error>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -33,7 +34,7 @@ sum_sender::sum_sender(int port, int max_connections)
                 to_send(),
                 fds() {
     if (sockfd < 0) {
-        throw connection_exception(0);
+        throw std::system_error(errno, std::generic_category());
     }
     sockaddr_in addr;
     explicit_bzero(&addr, sizeof(addr));
@@ -41,7 +42,7 @@ sum_sender::sum_sender(int port, int max_connections)
     addr.sin_port = htons(port);
     addr.sin_addr.s_addr = INADDR_ANY;
     if (bind(sockfd, (sockaddr* )&addr, sizeof(addr)) < 0) {
-        throw connection_exception(1);
+        throw std::system_error(errno, std::generic_category());
     }
     listen(sockfd, max_connections);
 }
@@ -166,9 +167,4 @@ sum_sender::~sum_sender() {
     }
     close(sockfd);
 }
-
-static const char* messages[] = {"Failed to acquire socket", "Failed to bind socket"};
-const char * connection_exception::what() const noexcept {
-    return messages[error_code];
-};
 
