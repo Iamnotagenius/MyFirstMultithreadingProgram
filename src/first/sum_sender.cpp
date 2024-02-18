@@ -187,14 +187,20 @@ void sum_sender::send_sum(int sum) {
     queue_condition.notify_one();
 }
 
+void sum_sender::notify_eof() {
+    queue_condition.notify_one();
+}
+
 sum_sender::~sum_sender() {
 #ifdef DEBUG
     debug::debug_log("Sender") << "Terminating connections...\n";
 #endif
     queue_condition.notify_one();
     for (int fd : fds) {
+        shutdown(fd, SHUT_RDWR);
         close(fd);
     }
+    shutdown(sockfd, SHUT_RDWR);
     close(sockfd);
 }
 

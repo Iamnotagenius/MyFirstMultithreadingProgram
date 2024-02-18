@@ -1,4 +1,5 @@
 #include "sum_reciever.hpp"
+#include <asm-generic/socket.h>
 #include <cerrno>
 #include <ios>
 #include <iostream>
@@ -30,6 +31,8 @@ std::istream sum_reciever::connect() {
         if (sockfd == -1) {
             continue;
         }
+        linger linger{1, 0};
+        setsockopt(sockfd, SOL_SOCKET, SO_LINGER, &linger, sizeof(linger));
         if (::connect(sockfd, ai->ai_addr, ai->ai_addrlen) != -1) {
             break;
         }
@@ -45,7 +48,13 @@ std::istream sum_reciever::connect() {
     return std::istream(&fdbuf);
 }
 
+int sum_reciever::get_fd() const {
+    return sockfd;
+}
+
 sum_reciever::~sum_reciever() {
+    shutdown(sockfd, SHUT_RDWR);
     close(sockfd);
     freeaddrinfo(addr_list);
+    std::cerr << "Reciever destructor\n";
 }

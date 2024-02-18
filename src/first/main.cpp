@@ -31,18 +31,19 @@ int main(int argc, char *argv[]) {
         std::mutex new_data;
         std::mutex data_handled;
 
-        sum_sender con(argv[1]);
+        sum_sender sender(argv[1]);
 
         buffer.reserve(128);
         new_data.lock();
 
         std::thread t1(reader, std::ref(new_data), std::ref(data_handled), std::ref(buffer));
-        std::thread t2(writer, std::ref(new_data), std::ref(data_handled), std::ref(buffer), std::ref(con));
-        std::thread conn_thread([&]() { con.handle_connections(); });
+        std::thread t2(writer, std::ref(new_data), std::ref(data_handled), std::ref(buffer), std::ref(sender));
+        std::thread conn_thread([&]() { sender.handle_connections(); });
 
         t1.join();
         t2.join();
-        conn_thread.detach();
+        sender.notify_eof();
+        conn_thread.join();
     } catch (const std::system_error& e) {
         std::cerr << "Caught exception: " << e.what() << std::endl;
     }
@@ -51,7 +52,6 @@ int main(int argc, char *argv[]) {
 void reader(std::mutex& new_data_lock, std::mutex& data_read_lock, std::string& buffer) {
     std::string input;
     while (!std::cin.eof()) {
-        std::cout << "$ ";
         std::cin >> input;
         if (std::cin.eof()) {
             break;
@@ -81,6 +81,7 @@ void writer(std::mutex& new_data_lock, std::mutex& data_read_lock, std::string& 
 #ifdef DEBUG
         debug::debug_log("Writing thread") << "Waiting for data...\n";
 #endif
+        std::cout << "$ ";
         new_data_lock.lock();
         input = buffer;
         buffer.clear();
@@ -90,7 +91,7 @@ void writer(std::mutex& new_data_lock, std::mutex& data_read_lock, std::string& 
             break;
         }
 
-        std::cout << input << std::endl;
+        std::cout << input << '\n';
 
         int sum = std::accumulate(input.cbegin(), input.cend(), 0, [](int lhs, char rhs) {
             if (isdigit(rhs)) {

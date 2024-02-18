@@ -13,6 +13,7 @@ class sum_reciever {
     public:
         sum_reciever(const char* host, const char *port);
         std::istream connect();
+        int get_fd() const;
         ~sum_reciever();
 };
 #endif
