@@ -50,6 +50,8 @@ sum_sender::sum_sender(const char* port, int max_connections)
         if (sockfd == -1) {
             continue;
         }
+        int optval = 1;
+        setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
         if (bind(sockfd, ai->ai_addr, ai->ai_addrlen) == 0) {
             break;
         }
