@@ -82,23 +82,48 @@ void sum_sender::handle_connections() {
         debug::debug_log("Sender thread") << "Got sum " << sum << "\n";
 #endif
 
-        accept_new_connections();
-
         std::vector<pollfd> polling;
-        polling.reserve(fds.size());
+        polling.reserve(fds.size() + 1);
         std::transform(fds.cbegin(), fds.cend(), std::back_inserter(polling), [](int fd) {
             return pollfd{fd, POLLOUT, 0};
         });
+        polling.push_back(pollfd{sockfd, POLLIN, 0});
         bool sent = false;
         while (!polling.empty()) {
+#ifdef DEBUG
+            debug::debug_log("Sender thread") << "polling " << polling.size() << " sockets\n";
+#endif
             int ready = poll(polling.data(), polling.size(), -1);
+#ifdef DEBUG
+            debug::debug_log("Sender thread") << ready << " sockets are ready\n";
+#endif
+            if (polling.back().revents == POLLIN) {
+#ifdef DEBUG
+                debug::debug_log("Sender thread") << "Socket is ready to accept connections\n";
+#endif
+                std::vector<int> new_fds = accept_new_connections();
+                polling.pop_back();
+                polling.reserve(polling.size() + new_fds.size() + 1);
+                std::transform(new_fds.cbegin(), new_fds.cend(), std::back_inserter(polling), [](int fd){
+                    return pollfd{fd, POLLOUT, 0};
+                });
+                polling.push_back(pollfd{sockfd, POLLIN, 0});
+                continue;
+            }
+            else if (polling.back().revents == 0) {
+                polling.pop_back();
+            }
+            else {
+                perror("Error on socket");
+                return;
+            }
             if (ready == -1) {
                 perror("Error on poll()");
                 break;
             }
             for (pollfd& pfd : polling) {
                 if (pfd.revents == 0) {
-                    continue;
+                    return;
                 }
                 if (pfd.revents != POLLOUT) {
                     fds.erase(pfd.fd);
@@ -131,29 +156,10 @@ void sum_sender::handle_connections() {
 #endif
 }
 
-void sum_sender::accept_new_connections() {
+std::vector<int> sum_sender::accept_new_connections() {
+    std::vector<int> new_fds;
     int new_fd;
     errno = 0;
-    if (fds.empty()) {
-        int flags = fcntl(sockfd, F_GETFL);
-        fcntl(sockfd, F_SETFL, flags & (~O_NONBLOCK));
-#ifdef DEBUG
-        debug::debug_log("Sender thread") << "Waiting for new connections...\n";
-#endif
-        new_fd = accept(sockfd, NULL, NULL);
-        if (new_fd < 0) {
-            perror("Error on accept()");
-            exit(1);
-        }
-        else {
-#ifdef DEBUG
-            debug::debug_log("Sender thread") << "New connection established " << new_fd << std::endl;
-#endif
-            fds.insert(new_fd);
-        }
-        fcntl(sockfd, F_SETFL, flags);
-    }
-
     do {
         new_fd = accept(sockfd, NULL, NULL);
         if (new_fd < 0 && errno != EWOULDBLOCK) {
@@ -167,7 +173,10 @@ void sum_sender::accept_new_connections() {
         debug::debug_log("Sender thread") << "New connection established " << new_fd << std::endl;
 #endif
         fds.insert(new_fd);
+        new_fds.push_back(new_fd);
     } while (new_fd != -1);
+
+    return new_fds;
 }
 
 void sum_sender::send_sum(int sum) {
