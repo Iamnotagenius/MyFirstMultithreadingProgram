@@ -56,5 +56,4 @@ sum_reciever::~sum_reciever() {
     shutdown(sockfd, SHUT_RDWR);
     close(sockfd);
     freeaddrinfo(addr_list);
-    std::cerr << "Reciever destructor\n";
 }

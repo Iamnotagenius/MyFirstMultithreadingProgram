@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <asm-generic/socket.h>
+#include <atomic>
 #include <cerrno>
 #include <condition_variable>
 #include <cstdio>
@@ -65,14 +66,14 @@ sum_sender::sum_sender(const char* port, int max_connections)
     listen(sockfd, max_connections);
 }
 
-void sum_sender::handle_connections() {
-    while (!std::cin.eof() || !to_send.empty()) {
+void sum_sender::handle_connections(int sigfd, const std::atomic_bool& should_stop) {
+    while ((!std::cin.eof() || !to_send.empty()) && !should_stop) {
 #ifdef DEBUG
         debug::debug_log("Sender thread") << "Waiting for sum...\n";
 #endif
         if (to_send.empty()) {
             std::unique_lock<std::mutex> lock(queue_mutex);
-            queue_condition.wait(lock, [this]{ return !to_send.empty() || std::cin.eof(); });
+            queue_condition.wait(lock, [&, this]{ return !to_send.empty() || std::cin.eof() || should_stop; });
         }
         if (to_send.empty()) {
             break;
@@ -83,10 +84,11 @@ void sum_sender::handle_connections() {
 #endif
 
         std::vector<pollfd> polling;
-        polling.reserve(fds.size() + 1);
+        polling.reserve(fds.size() + 2);
         std::transform(fds.cbegin(), fds.cend(), std::back_inserter(polling), [](int fd) {
             return pollfd{fd, POLLOUT, 0};
         });
+        polling.push_back(pollfd{sigfd, POLLIN, 0});
         polling.push_back(pollfd{sockfd, POLLIN, 0});
         bool sent = false;
         while (!polling.empty()) {
@@ -103,15 +105,21 @@ void sum_sender::handle_connections() {
 #endif
                 std::vector<int> new_fds = accept_new_connections();
                 polling.pop_back();
-                polling.reserve(polling.size() + new_fds.size() + 1);
+                polling.pop_back();
+                polling.reserve(polling.size() + new_fds.size() + 2);
                 std::transform(new_fds.cbegin(), new_fds.cend(), std::back_inserter(polling), [](int fd){
                     return pollfd{fd, POLLOUT, 0};
                 });
+                polling.push_back(pollfd{sigfd, POLLIN, 0});
                 polling.push_back(pollfd{sockfd, POLLIN, 0});
                 continue;
             }
-            else if (polling.back().revents == 0) {
+            else if (polling.back().revents == 0 && polling[polling.size() - 2].revents == 0) {
                 polling.pop_back();
+                polling.pop_back();
+            }
+            else if (polling[polling.size() - 2].revents == POLLIN) {
+                break;
             }
             else {
                 perror("Error on socket");
