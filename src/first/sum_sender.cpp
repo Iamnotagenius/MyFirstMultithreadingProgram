@@ -8,6 +8,7 @@
 #include <iostream>
 #include <iterator>
 #include <mutex>
+#include <netdb.h>
 #include <ostream>
 #include <queue>
 #include <set>
@@ -26,24 +27,39 @@
 #endif
 #include "sum_sender.hpp"
 
-sum_sender::sum_sender(int port, int max_connections) 
-            : sockfd(socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0)),
-                port(port),
-                queue_mutex(),
+sum_sender::sum_sender(const char* port, int max_connections) 
+            : queue_mutex(),
                 queue_condition(),
                 to_send(),
                 fds() {
-    if (sockfd < 0) {
+    addrinfo hints{
+        .ai_flags = AI_PASSIVE,
+        .ai_family = AF_UNSPEC,
+        .ai_socktype = SOCK_STREAM,
+        .ai_protocol = 0
+    };
+    addrinfo *addr_list;
+    int err;
+    if ((err = getaddrinfo(NULL, port, &hints, &addr_list)) != 0) {
+        throw std::system_error(err, std::generic_category(), gai_strerror(err));
+    }
+        
+    addrinfo *ai;
+    for (ai = addr_list; ai != NULL; ai = ai->ai_next) {
+        sockfd = socket(ai->ai_family, ai->ai_socktype | SOCK_NONBLOCK, ai->ai_protocol);
+        if (sockfd == -1) {
+            continue;
+        }
+        if (bind(sockfd, ai->ai_addr, ai->ai_addrlen) == 0) {
+            break;
+        }
+
+        close(sockfd);
+    }
+    if (ai == NULL) {
         throw std::system_error(errno, std::generic_category());
     }
-    sockaddr_in addr;
-    explicit_bzero(&addr, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = INADDR_ANY;
-    if (bind(sockfd, (sockaddr* )&addr, sizeof(addr)) < 0) {
-        throw std::system_error(errno, std::generic_category());
-    }
+
     listen(sockfd, max_connections);
 }
 
@@ -97,6 +113,9 @@ void sum_sender::handle_connections() {
             polling.erase(std::remove_if(polling.begin(), polling.end(), [](pollfd pfd){ return pfd.fd == -1; }), polling.end());
         }
         if (sent) {
+#ifdef DEBUG
+            debug::debug_log("Sender thread") << "Sent " << sum << std::endl;
+#endif
             to_send.pop();
         }
 #ifdef DEBUG

@@ -1,4 +1,6 @@
 #include <chrono>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <istream>
 #include <arpa/inet.h>
@@ -8,18 +10,20 @@
 #include <sys/socket.h>
 #include <system_error>
 #include <thread>
+#include <netdb.h>
 
 #include "../debug/log.hpp"
 #include "sum_reciever.hpp"
 
 int main(int argc, char *argv[]) {
-    sockaddr_in addr{AF_INET, htons(6666), {htonl(INADDR_LOOPBACK)}, {0}};
-    sum_reciever rec(addr);
+    if (argc < 3) {
+        std::cerr << "Usage: " << argv[0] << " HOST PORT\n";
+        return 1;
+    }
+    sum_reciever rec(argv[1], argv[2]);
     while (true) {
 #ifdef DEBUG
-        char ipstr[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &addr.sin_addr, ipstr, INET_ADDRSTRLEN);
-        debug::debug_log("Reciever") << "Trying to connect to sender at " << ipstr << ':' << ntohs(addr.sin_port) << "...\n";
+        debug::debug_log("Reciever") << "Trying to connect to sender at " << argv[1] << ':' << argv[2] << "...\n";
 #endif
         try {
             std::istream con_stream = rec.connect();

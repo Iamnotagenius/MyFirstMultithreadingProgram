@@ -21,13 +21,17 @@ void reader(std::mutex& new_data_lock, std::mutex& data_read_lock, std::string& 
 void writer(std::mutex& new_data_lock, std::mutex& data_read_lock, std::string& buffer, sum_sender& con);
 std::string replace_even(const std::string& digits);
 
-int main() {
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        std::cerr << "Usage: " << argv[0] << " PORT\n";
+        return 1;
+    }
     try {
         std::string buffer;
         std::mutex new_data;
         std::mutex data_handled;
 
-        sum_sender con(6666);
+        sum_sender con(argv[1]);
 
         buffer.reserve(128);
         new_data.lock();

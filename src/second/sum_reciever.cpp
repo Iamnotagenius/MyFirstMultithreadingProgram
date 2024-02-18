@@ -4,28 +4,48 @@
 #include <iostream>
 #include <istream>
 #include <ext/stdio_filebuf.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <system_error>
 #include <unistd.h>
 
-sum_reciever::sum_reciever(const sockaddr_in& addr) :
-        sockfd(socket(AF_INET, SOCK_STREAM, 0)), addr(addr), fdbuf(sockfd, std::ios::in) {
-    if (sockfd < 0) {
-        throw std::system_error(errno, std::generic_category());
+sum_reciever::sum_reciever(const char* host, const char* port) {
+    addrinfo hints{
+        .ai_flags = 0,
+        .ai_family = AF_UNSPEC,
+        .ai_socktype = SOCK_STREAM,
+        .ai_protocol = 0,
+    };
+    int err;
+    if ((err = getaddrinfo(host, port, &hints, &addr_list)) != 0) {
+        throw std::system_error(err, std::generic_category(), gai_strerror(err));
     }
 }
 
 std::istream sum_reciever::connect() {
-    int connfd = ::connect(sockfd, (sockaddr* )&addr, sizeof(addr));
-    if (connfd < 0) {
+    addrinfo *ai;
+    for (ai = addr_list; ai != NULL; ai = ai->ai_next) {
+        sockfd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (sockfd == -1) {
+            continue;
+        }
+        if (::connect(sockfd, ai->ai_addr, ai->ai_addrlen) != -1) {
+            break;
+        }
+
         close(sockfd);
-        sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    }
+    if (ai == NULL) {
         throw std::system_error(errno, std::generic_category());
     }
+
+    fdbuf = __gnu_cxx::stdio_filebuf<char>(sockfd, std::ios::in);
+
     return std::istream(&fdbuf);
 }
 
 sum_reciever::~sum_reciever() {
     close(sockfd);
+    freeaddrinfo(addr_list);
 }
