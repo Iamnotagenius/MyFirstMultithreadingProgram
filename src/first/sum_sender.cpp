@@ -79,7 +79,6 @@ void sum_sender::handle_connections() {
 #ifdef DEBUG
         debug::debug_log("Sender thread") << "Got sum " << sum << "\n";
 #endif
-        std::string str = std::to_string(sum) + '\n';
 
         accept_new_connections();
 
@@ -104,6 +103,7 @@ void sum_sender::handle_connections() {
                     close(pfd.fd);
                 }
                 else {
+                    std::string str = std::to_string(sum) + '\n';
                     send(pfd.fd, str.data(), str.size(), 0);
                     sent = true;
                 }
